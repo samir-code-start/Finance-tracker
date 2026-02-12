@@ -1,0 +1,134 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="light">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Finance Tracker | Pro</title>
+    <meta name="description" content="A professional, responsive finance tracker with cloud sync.">
+    <link rel="stylesheet" href="styles.css">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+</head>
+
+<body>
+    <!-- Background Decoration -->
+    <div class="bg-blobs">
+        <div class="blob blob-1"></div>
+        <div class="blob blob-2"></div>
+        <div class="blob blob-3"></div>
+    </div>
+
+    <div class="container">
+        <header>
+            <h1>Finance Tracker</h1>
+            <div class="header-controls">
+                <button id="auth-btn">
+                    <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none"
+                        stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+                        <path d="M19 21v-2a4 4 0 0 0-4-4H9a4 4 0 0 0-4 4v2"></path>
+                        <circle cx="12" cy="7" r="4"></circle>
+                    </svg>
+                    <span>Login</span>
+                </button>
+                <button id="theme-toggle" aria-label="Toggle dark mode">
+                    <svg id="sun-icon" xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24"
+                        fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"
+                        stroke-linejoin="round">
+                        <circle cx="12" cy="12" r="5"></circle>
+                        <line x1="12" y1="1" x2="12" y2="3"></line>
+                        <line x1="12" y1="21" x2="12" y2="23"></line>
+                        <line x1="4.22" y1="4.22" x2="5.64" y2="5.64"></line>
+                        <line x1="18.36" y1="18.36" x2="19.78" y2="19.78"></line>
+                        <line x1="1" y1="12" x2="3" y2="12"></line>
+                        <line x1="21" y1="12" x2="23" y2="12"></line>
+                        <line x1="4.22" y1="19.78" x2="5.64" y2="18.36"></line>
+                        <line x1="18.36" y1="5.64" x2="19.78" y2="4.22"></line>
+                    </svg>
+                    <svg id="moon-icon" class="hidden" xmlns="http://www.w3.org/2000/svg" width="20" height="20"
+                        viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"
+                        stroke-linejoin="round">
+                        <path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"></path>
+                    </svg>
+                </button>
+            </div>
+        </header>
+
+        <!-- Date Controls -->
+        <section class="date-controls glass-card">
+            <input type="date" id="current-date">
+            <button id="reset-day-btn" title="Clear all transactions for this date">
+                <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none"
+                    stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                    <path d="M3 6h18"></path>
+                    <path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6"></path>
+                    <path d="M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2"></path>
+                </svg>
+            </button>
+        </section>
+
+        <section class="glass-card balance-card">
+            <p>Total Balance (Up to Date)</p>
+            <h2 id="balance">$0.00</h2>
+        </section>
+
+        <section class="summary-container">
+            <div class="glass-card summary-item income">
+                <p>Money Received</p>
+                <h3 id="total-income">$0.00</h3>
+            </div>
+            <div class="glass-card summary-item expense">
+                <p>Daily Expenses</p>
+                <h3 id="total-expense">$0.00</h3>
+            </div>
+        </section>
+
+        <section class="glass-card form-section">
+            <h3 class="section-title">Record Transaction</h3>
+            <form id="transaction-form">
+                <div class="form-group">
+                    <label for="title">Title</label>
+                    <input type="text" id="title" placeholder="Description..." required>
+                </div>
+                <div class="form-group">
+                    <label for="amount">Amount</label>
+                    <input type="text" id="amount" inputmode="decimal" placeholder="0.00 or 10+20" required>
+                </div>
+                <div class="form-group">
+                    <label>Category Type</label>
+                    <div class="radio-group">
+                        <label class="radio-label">
+                            <input type="radio" name="type" value="income">
+                            <span class="radio-btn income-btn">Income (+)</span>
+                        </label>
+                        <label class="radio-label">
+                            <input type="radio" name="type" value="expense" checked>
+                            <span class="radio-btn expense-btn">Expense (-)</span>
+                        </label>
+                    </div>
+                </div>
+                <div class="form-actions">
+                    <button type="submit" id="submit-btn" class="btn-primary">Append Transaction</button>
+                    <button type="button" id="cancel-edit-btn" class="btn-secondary hidden">Cancel</button>
+                </div>
+            </form>
+        </section>
+
+        <section class="glass-card history-section">
+            <h3 class="section-title">Timeline</h3>
+            <ul id="transaction-list">
+                <li class="empty-state">No records found.</li>
+            </ul>
+        </section>
+    </div>
+
+    <!-- Firebase SDKs -->
+    <script src="https://www.gstatic.com/firebasejs/10.8.0/firebase-app-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/10.8.0/firebase-auth-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/10.8.0/firebase-firestore-compat.js"></script>
+
+    <script src="script.js"></script>
+</body>
+
+</html>
