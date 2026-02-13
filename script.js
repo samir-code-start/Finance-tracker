@@ -79,19 +79,28 @@ async function loadData() {
                 .collection('transactions')
                 .get();
 
-            transactions = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+            transactions = snapshot.docs.map(doc => {
+                const data = doc.data();
+                return { 
+                    id: doc.id, 
+                    ...data,
+                    // If date is a Firestore timestamp, convert to milliseconds
+                    date: data.date && typeof data.date.toMillis === 'function' ? data.date.toMillis() : data.date
+                };
+            });
         } catch (error) {
-            console.error("Firestore error:", error);
+            console.error("Firestore loading error:", error);
             loadLocal();
         }
     } else {
         loadLocal();
     }
 
-    // Normalize data (ensure dateStr exists)
+    // Normalize data (ensure dateStr exists and is valid)
     transactions.forEach(t => {
         if (!t.dateStr) {
-            t.dateStr = new Date(t.date).toISOString().split('T')[0];
+            const d = new Date(t.date);
+            t.dateStr = !isNaN(d.getTime()) ? d.toISOString().split('T')[0] : currentDate;
         }
     });
 
@@ -131,24 +140,35 @@ function evaluateMathExpression(str) {
 }
 
 async function addTransaction(e) {
-
-    e.preventDefault();
+    if (e) e.preventDefault();
 
     const title = titleInp.value.trim();
-    const amount = evaluateMathExpression(amountInp.value);
+    const amountStr = amountInp.value;
+    const amount = evaluateMathExpression(amountStr);
+    
+    const typeChecked = document.querySelector('input[name="type"]:checked');
+    const type = typeChecked ? typeChecked.value : 'expense';
 
-    const type = document.querySelector('input[name="type"]:checked').value;
+    if (title === '' || isNaN(amount)) {
+        alert("Please enter a valid title and amount.");
+        return;
+    }
 
-
-    if (title === '' || isNaN(amount)) return;
+    // Disable button to prevent double submits
+    const originalBtnText = submitBtn.textContent;
+    submitBtn.disabled = true;
+    submitBtn.textContent = "Processing...";
 
     if (editingId) {
         // --- UPDATE MODE ---
         const transactionIndex = transactions.findIndex(t => t.id.toString() === editingId.toString());
         if (transactionIndex > -1) {
-
             const oldT = transactions[transactionIndex];
-            const updatedT = { ...oldT, title, amount, type }; // Keep original date
+            const updatedT = { ...oldT, title, amount, type };
+
+            // Optimistic update
+            transactions[transactionIndex] = updatedT;
+            updateUI();
 
             if (currentUser && db) {
                 try {
@@ -157,27 +177,36 @@ async function addTransaction(e) {
                         .collection('transactions')
                         .doc(editingId)
                         .update({ title, amount, type });
-
-                    transactions[transactionIndex] = updatedT;
                 } catch (error) {
-                    console.error("Update failed:", error);
+                    console.error("Cloud update failed, reverting local state:", error);
+                    transactions[transactionIndex] = oldT; // Revert on failure
+                    updateUI();
+                    alert("Failed to sync with cloud. Changes might not persist.");
                 }
             } else {
-                transactions[transactionIndex] = updatedT;
                 saveData();
             }
-            cancelEdit(); // Reset form state
+            cancelEdit();
         }
     } else {
         // --- ADD MODE ---
-        // Use currently selected date
         const transactionData = {
             title,
             amount,
             type,
-            date: new Date().getTime(), // Keep timestamp for sorting order
-            dateStr: currentDate // Use selected date for filtering
+            date: new Date().getTime(),
+            dateStr: currentDate
         };
+
+        // Temporary local ID for optimistic rendering
+        const tempId = "temp-" + Date.now();
+        const optimisticT = { id: tempId, ...transactionData };
+
+        // Optimistic update
+        transactions.push(optimisticT);
+        updateUI();
+        formEl.reset();
+        document.querySelector('input[value="expense"]').checked = true;
 
         if (currentUser && db) {
             try {
@@ -186,19 +215,24 @@ async function addTransaction(e) {
                     .collection('transactions')
                     .add(transactionData);
 
-                transactions.push({ id: docRef.id, ...transactionData });
+                // Update temp ID with real Firestore ID
+                const index = transactions.findIndex(t => t.id === tempId);
+                if (index > -1) transactions[index].id = docRef.id;
             } catch (error) {
-                console.error("Add failed:", error);
+                console.error("Cloud add failed, removing entry:", error);
+                transactions = transactions.filter(t => t.id !== tempId); // Remove on failure
+                updateUI();
+                alert("Failed to save transaction to cloud.");
             }
         } else {
-            const id = Math.floor(Math.random() * 100000000).toString();
-            transactions.push({ id, ...transactionData });
+            // Replace temp ID with a random one for local persistence
+            optimisticT.id = Math.floor(Math.random() * 100000000).toString();
             saveData();
         }
     }
 
-    updateUI();
-    if (!editingId) formEl.reset(); // Only clear if not already cleared by cancelEdit
+    submitBtn.disabled = false;
+    submitBtn.textContent = originalBtnText;
 }
 
 function startEdit(id) {
@@ -235,27 +269,30 @@ function cancelEdit() {
 
 
 async function removeTransaction(id, event) {
-    if (event) event.stopPropagation(); // Prevent edit mode trigger
+    if (event) event.stopPropagation();
+
+    const originalTransactions = [...transactions];
+    
+    // Optimistic Update
+    transactions = transactions.filter(t => t.id.toString() !== id.toString());
+    updateUI();
 
     if (currentUser && db) {
-
         try {
             await db.collection('users')
                 .doc(currentUser.uid)
                 .collection('transactions')
                 .doc(id.toString())
                 .delete();
-
-            transactions = transactions.filter(t => t.id.toString() !== id.toString());
         } catch (error) {
-            console.error("Delete failed:", error);
+            console.error("Delete failed, reverting UI:", error);
+            transactions = originalTransactions; // Revert
+            updateUI();
+            alert("Failed to delete from cloud.");
         }
     } else {
-        transactions = transactions.filter(t => t.id.toString() !== id.toString());
         saveData();
     }
-
-    updateUI();
 }
 
 async function resetDay() {
@@ -418,8 +455,6 @@ themeToggleBtn.addEventListener('click', toggleTheme);
 authBtn.addEventListener('click', toggleAuth);
 cancelEditBtn.addEventListener('click', cancelEdit);
 
-window.removeTransaction = removeTransaction;
-
 dateInp.addEventListener('change', (e) => {
     currentDate = e.target.value;
     updateUI();
@@ -427,5 +462,7 @@ dateInp.addEventListener('change', (e) => {
 resetDayBtn.addEventListener('click', resetDay);
 
 window.removeTransaction = removeTransaction;
+window.startEdit = startEdit;
 
 init();
+
