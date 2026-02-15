@@ -24,9 +24,7 @@ try {
 
 // --- State Management ---
 let transactions = [];
-let currentDate = new Date().toISOString().split('T')[0]; // YYYY-MM-DD
 let editingId = null;
-
 
 // --- Selectors ---
 const balanceEl = document.getElementById('balance');
@@ -36,16 +34,16 @@ const listEl = document.getElementById('transaction-list');
 const formEl = document.getElementById('transaction-form');
 const titleInp = document.getElementById('title');
 const amountInp = document.getElementById('amount');
+const categoryInp = document.getElementById('category');
+const dateInp = document.getElementById('date');
+const notesInp = document.getElementById('notes');
 
 const themeToggleBtn = document.getElementById('theme-toggle');
 const sunIcon = document.getElementById('sun-icon');
 const moonIcon = document.getElementById('moon-icon');
 const authBtn = document.getElementById('auth-btn');
-const dateInp = document.getElementById('current-date');
-const resetDayBtn = document.getElementById('reset-day-btn');
-const cancelEditBtn = document.getElementById('cancel-edit-btn');
 const submitBtn = document.getElementById('submit-btn');
-
+const cancelEditBtn = document.getElementById('cancel-edit-btn');
 
 // --- Initialization ---
 async function init() {
@@ -54,8 +52,8 @@ async function init() {
     document.documentElement.setAttribute('data-theme', savedTheme);
     updateThemeIcons(savedTheme);
 
-    // 2. Date Setup
-    dateInp.value = currentDate;
+    // 2. Date Setup (Default to today)
+    dateInp.valueAsDate = new Date();
 
     // 3. Auth State Listener
     if (auth) {
@@ -81,10 +79,9 @@ async function loadData() {
 
             transactions = snapshot.docs.map(doc => {
                 const data = doc.data();
-                return { 
-                    id: doc.id, 
+                return {
+                    id: doc.id,
                     ...data,
-                    // If date is a Firestore timestamp, convert to milliseconds
                     date: data.date && typeof data.date.toMillis === 'function' ? data.date.toMillis() : data.date
                 };
             });
@@ -96,25 +93,25 @@ async function loadData() {
         loadLocal();
     }
 
-    // Normalize data (ensure dateStr exists and is valid)
-    transactions.forEach(t => {
-        if (!t.dateStr) {
-            const d = new Date(t.date);
-            t.dateStr = !isNaN(d.getTime()) ? d.toISOString().split('T')[0] : currentDate;
-        }
-    });
-
+    // Sort by date desc
+    transactions.sort((a, b) => new Date(b.dateStr || b.date) - new Date(a.dateStr || a.date));
     updateUI();
 }
 
 function loadLocal() {
     const stored = JSON.parse(localStorage.getItem('transactions'));
     transactions = stored || [];
+    // Ensure compatibility with old data format if any
+    transactions = transactions.map(t => ({
+        ...t,
+        category: t.category || 'Other',
+        dateStr: t.dateStr || new Date(t.date).toISOString().split('T')[0]
+    }));
 }
 
 async function saveData() {
     if (currentUser && db) {
-        // Handled individually
+        // Handled individually per action for cloud
     } else {
         localStorage.setItem('transactions', JSON.stringify(transactions));
     }
@@ -122,17 +119,12 @@ async function saveData() {
 
 // --- Core Actions ---
 
-// Helper to evaluate simple math expressions (e.g. "10+20+5")
 function evaluateMathExpression(str) {
-    // 1. Remove anything that isn't a digit, dot, +, -, *, /, (, or )
-    //    We also allow spaces which we can strip
+    // Basic safety: allow only numbers and math operators
     const cleanStr = str.replace(/[^0-9+\-*/().]/g, '');
-
     if (!cleanStr) return NaN;
-
     try {
-        // 2. Use Function constructor for safe evaluation
-        //    "return " + cleanStr => "return 10+20"
+        // eslint-disable-next-line no-new-func
         return new Function('return ' + cleanStr)();
     } catch (e) {
         return NaN;
@@ -145,29 +137,42 @@ async function addTransaction(e) {
     const title = titleInp.value.trim();
     const amountStr = amountInp.value;
     const amount = evaluateMathExpression(amountStr);
-    
+    const category = categoryInp.value;
+    const dateStr = dateInp.value;
+    const notes = notesInp.value.trim();
+
     const typeChecked = document.querySelector('input[name="type"]:checked');
     const type = typeChecked ? typeChecked.value : 'expense';
 
-    if (title === '' || isNaN(amount)) {
-        alert("Please enter a valid title and amount.");
+    if (title === '' || isNaN(amount) || amount === 0 || !category || !dateStr) {
+        alert("Please fill in all required fields.");
         return;
     }
 
-    // Disable button to prevent double submits
     const originalBtnText = submitBtn.textContent;
     submitBtn.disabled = true;
     submitBtn.textContent = "Processing...";
 
+    const transactionData = {
+        title,
+        amount: Math.abs(amount), // Ensure positive
+        type,
+        category,
+        date: new Date(dateStr).getTime(),
+        dateStr,
+        notes
+    };
+
     if (editingId) {
         // --- UPDATE MODE ---
-        const transactionIndex = transactions.findIndex(t => t.id.toString() === editingId.toString());
-        if (transactionIndex > -1) {
-            const oldT = transactions[transactionIndex];
-            const updatedT = { ...oldT, title, amount, type };
+        const index = transactions.findIndex(t => t.id.toString() === editingId.toString());
+        if (index > -1) {
+            const oldT = transactions[index];
+            const updatedT = { ...oldT, ...transactionData };
 
-            // Optimistic update
-            transactions[transactionIndex] = updatedT;
+            transactions[index] = updatedT;
+            // Re-sort
+            transactions.sort((a, b) => new Date(b.dateStr) - new Date(a.dateStr));
             updateUI();
 
             if (currentUser && db) {
@@ -176,12 +181,10 @@ async function addTransaction(e) {
                         .doc(currentUser.uid)
                         .collection('transactions')
                         .doc(editingId)
-                        .update({ title, amount, type });
+                        .update(transactionData);
                 } catch (error) {
-                    console.error("Cloud update failed, reverting local state:", error);
-                    transactions[transactionIndex] = oldT; // Revert on failure
-                    updateUI();
-                    alert("Failed to sync with cloud. Changes might not persist.");
+                    console.error("Cloud update failed:", error);
+                    alert("Failed to sync with cloud. Changes saved locally in session.");
                 }
             } else {
                 saveData();
@@ -190,22 +193,19 @@ async function addTransaction(e) {
         }
     } else {
         // --- ADD MODE ---
-        const transactionData = {
-            title,
-            amount,
-            type,
-            date: new Date().getTime(),
-            dateStr: currentDate
-        };
-
-        // Temporary local ID for optimistic rendering
         const tempId = "temp-" + Date.now();
         const optimisticT = { id: tempId, ...transactionData };
 
-        // Optimistic update
-        transactions.push(optimisticT);
+        transactions.unshift(optimisticT);
+        // Re-sort
+        transactions.sort((a, b) => new Date(b.dateStr) - new Date(a.dateStr));
         updateUI();
-        formEl.reset();
+
+        // Reset form inputs but keep date
+        titleInp.value = '';
+        amountInp.value = '';
+        notesInp.value = '';
+        categoryInp.value = ''; // Reset category
         document.querySelector('input[value="expense"]').checked = true;
 
         if (currentUser && db) {
@@ -215,18 +215,18 @@ async function addTransaction(e) {
                     .collection('transactions')
                     .add(transactionData);
 
-                // Update temp ID with real Firestore ID
+                // Update the temp ID with real ID
                 const index = transactions.findIndex(t => t.id === tempId);
                 if (index > -1) transactions[index].id = docRef.id;
             } catch (error) {
-                console.error("Cloud add failed, removing entry:", error);
-                transactions = transactions.filter(t => t.id !== tempId); // Remove on failure
-                updateUI();
+                console.error("Cloud add failed:", error);
+                // Rollback UI if strictly cloud-based, or keep as pending?
+                // For now, let's just alert.
                 alert("Failed to save transaction to cloud.");
             }
         } else {
-            // Replace temp ID with a random one for local persistence
-            optimisticT.id = Math.floor(Math.random() * 100000000).toString();
+            // Local storage needs a simpler ID
+            transactions = transactions.map(t => t.id === tempId ? { ...t, id: Date.now().toString() } : t);
             saveData();
         }
     }
@@ -237,43 +237,40 @@ async function addTransaction(e) {
 
 function startEdit(id) {
     const t = transactions.find(trans => trans.id.toString() === id.toString());
-
     if (!t) return;
 
-    // Populate Form
     titleInp.value = t.title;
     amountInp.value = t.amount;
+    categoryInp.value = t.category || '';
+    dateInp.value = t.dateStr;
+    notesInp.value = t.notes || '';
 
-    // Select radio
     const radio = document.querySelector(`input[name="type"][value="${t.type}"]`);
     if (radio) radio.checked = true;
 
-    // Update State
     editingId = id.toString();
     submitBtn.textContent = "Update Transaction";
     cancelEditBtn.classList.remove('hidden');
 
-    // Scroll to form (optional, for mobile)
-    formEl.scrollIntoView({ behavior: 'smooth' });
+    // Scroll to form on mobile/desktop
+    const formSection = document.querySelector('.form-section');
+    formSection.scrollIntoView({ behavior: 'smooth', block: 'center' });
 }
 
 function cancelEdit() {
     editingId = null;
     formEl.reset();
-    submitBtn.textContent = "Append Transaction";
+    dateInp.valueAsDate = new Date(); // Reset to today
+    submitBtn.textContent = "Add Transaction";
     cancelEditBtn.classList.add('hidden');
-
-    // Reset radio to expense default if you want, or leave as is
     document.querySelector('input[value="expense"]').checked = true;
 }
 
-
 async function removeTransaction(id, event) {
     if (event) event.stopPropagation();
+    if (!confirm("Delete this transaction?")) return;
 
     const originalTransactions = [...transactions];
-    
-    // Optimistic Update
     transactions = transactions.filter(t => t.id.toString() !== id.toString());
     updateUI();
 
@@ -285,8 +282,9 @@ async function removeTransaction(id, event) {
                 .doc(id.toString())
                 .delete();
         } catch (error) {
-            console.error("Delete failed, reverting UI:", error);
-            transactions = originalTransactions; // Revert
+            console.error("Delete failed:", error);
+            // Rollback
+            transactions = originalTransactions;
             updateUI();
             alert("Failed to delete from cloud.");
         }
@@ -295,33 +293,9 @@ async function removeTransaction(id, event) {
     }
 }
 
-async function resetDay() {
-    if (confirm(`Are you sure you want to delete ALL transactions for ${currentDate}?`)) {
-        const toDelete = transactions.filter(t => t.dateStr === currentDate);
-
-        if (currentUser && db) {
-            const batch = db.batch();
-            toDelete.forEach(t => {
-                const ref = db.collection('users').doc(currentUser.uid).collection('transactions').doc(t.id);
-                batch.delete(ref);
-            });
-            await batch.commit();
-            transactions = transactions.filter(t => t.dateStr !== currentDate);
-        } else {
-            transactions = transactions.filter(t => t.dateStr !== currentDate);
-            saveData();
-        }
-        updateUI();
-    }
-}
-
 // --- Auth Handling ---
-
 async function toggleAuth() {
-    if (!auth) {
-        alert("Firebase config missing.");
-        return;
-    }
+    if (!auth) { alert("Firebase config missing."); return; }
 
     if (currentUser) {
         await auth.signOut();
@@ -349,91 +323,134 @@ function updateAuthUI(user) {
 
 // --- UI Updates ---
 
+function getCategoryIcon(category) {
+    const icons = {
+        'Food': '🍽️',
+        'Transportation': '🚗',
+        'Shopping': '🛍️',
+        'Housing': '🏠',
+        'Utilities': '💡',
+        'Entertainment': '🎬',
+        'Healthcare': '⚕️',
+        'Personal': '💆',
+        'Education': '📚',
+        'Debt': '💳',
+        'Savings': '💰',
+        'Investment': '📈',
+        'Other': '📦'
+    };
+    return icons[category] || '💸';
+}
+
 function updateUI() {
     listEl.innerHTML = '';
 
-    // Filter by Current Date
-    const filteredTransactions = transactions.filter(t => t.dateStr === currentDate);
-
-    if (filteredTransactions.length === 0) {
-        listEl.innerHTML = '<li class="empty-state">No records for this date.</li>';
+    if (transactions.length === 0) {
+        listEl.innerHTML = `
+            <div class="empty-state animate-in">
+                <div class="empty-state-icon">
+                    <svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="7" width="20" height="14" rx="2" ry="2"></rect><line x1="12" y1="22" x2="12" y2="7"></line><path d="M12 7H7.5a2.5 2.5 0 0 1 0-5C11 2 12 7 12 7z"></path><path d="M12 7h4.5a2.5 2.5 0 0 0 0-5C13 2 12 7 12 7z"></path></svg>
+                </div>
+                <h3>Start Your Journey</h3>
+                <p>Add your first transaction to begin tracking your finances.</p>
+            </div>
+        `;
     } else {
-        filteredTransactions.sort((a, b) => b.date - a.date);
+        // Group by Date
+        const grouped = transactions.reduce((groups, t) => {
+            const date = t.dateStr;
+            if (!groups[date]) groups[date] = [];
+            groups[date].push(t);
+            return groups;
+        }, {});
 
-        filteredTransactions.forEach(t => {
-            const li = document.createElement('li');
-            li.classList.add(t.type, 'animate-in');
+        // Sort dates desc
+        const sortedDates = Object.keys(grouped).sort((a, b) => new Date(b) - new Date(a));
 
-            li.onclick = () => startEdit(t.id);
+        sortedDates.forEach(date => {
+            // Check for today/yesterday
+            const d = new Date(date + 'T00:00:00'); // appended time to prevent timezone shift issues
+            const today = new Date();
+            today.setHours(0, 0, 0, 0);
 
-            li.innerHTML = `
-                <div class="li-info" onclick="startEdit('${t.id}')">
-                    <span class="li-title">${t.title}</span>
-                    <span class="li-amount">${t.type === 'expense' ? '-' : '+'}$${Math.abs(t.amount).toFixed(2)}</span>
-                </div>
-                <div class="action-btn-group">
-                    <button class="edit-btn" onclick="startEdit('${t.id}')" title="Edit">
-                        <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"></path><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"></path></svg>
-                    </button>
-                    <button class="delete-btn" onclick="removeTransaction('${t.id}', event)" title="Delete">
-                        <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"></polyline><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path></svg>
-                    </button>
-                </div>
-            `;
+            // Format header
+            let headerText;
+            const dStr = d.toISOString().split('T')[0];
+            const tStr = today.toISOString().split('T')[0];
 
-            listEl.appendChild(li);
+            const yesterday = new Date(today);
+            yesterday.setDate(yesterday.getDate() - 1);
+            const yStr = yesterday.toISOString().split('T')[0];
+
+            if (dStr === tStr) headerText = "Today";
+            else if (dStr === yStr) headerText = "Yesterday";
+            else {
+                headerText = d.toLocaleDateString(undefined, { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' });
+            }
+
+            const header = document.createElement('h4');
+            header.className = 'date-header animate-in';
+            header.textContent = headerText;
+            listEl.appendChild(header);
+
+            grouped[date].forEach(t => {
+                const li = document.createElement('li');
+                li.classList.add(t.type, 'animate-in');
+                li.onclick = () => startEdit(t.id);
+
+                const icon = getCategoryIcon(t.category);
+                const sign = t.type === 'expense' ? '-' : '+';
+
+                li.innerHTML = `
+                    <div class="li-left">
+                        <div class="category-icon">${icon}</div>
+                        <div class="li-info">
+                            <span class="li-title">${t.title}</span>
+                            <span class="li-category">${t.category || 'Uncategorized'}</span>
+                        </div>
+                    </div>
+                    <div class="li-right">
+                        <span class="li-amount">${sign}$${Number(t.amount).toFixed(2)}</span>
+                        ${t.notes ? '<span class="li-date" title="Has Notes">📝</span>' : ''}
+                    </div>
+                `;
+
+                const delBtn = document.createElement('button');
+                delBtn.className = 'delete-btn';
+                delBtn.innerHTML = '<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"></polyline><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path></svg>';
+                delBtn.title = "Delete";
+                delBtn.onclick = (e) => removeTransaction(t.id, e);
+
+                li.appendChild(delBtn);
+                listEl.appendChild(li);
+            });
         });
     }
 
-    updateTotals(filteredTransactions);
+    updateTotals();
 }
 
 
-function updateTotals(filteredTransactions) {
-    // 1. Persistent Money Received
-    // Find the latest date (<= current) that has an income entry
-    const incomeTransactions = transactions
-        .filter(t => t.type === 'income' && t.dateStr <= currentDate)
-        .sort((a, b) => b.date - a.date); // Newest first
+function updateTotals() {
+    const totalIncome = transactions
+        .filter(t => t.type === 'income')
+        .reduce((acc, t) => acc + Number(t.amount), 0);
 
-    let moneyReceived = 0;
-
-    if (incomeTransactions.length > 0) {
-        // Get the date of the very last income
-        const lastIncomeDate = incomeTransactions[0].dateStr;
-
-        // Sum ALL income from that specific date
-        moneyReceived = incomeTransactions
-            .filter(t => t.dateStr === lastIncomeDate)
-            .reduce((acc, t) => acc + t.amount, 0);
-    }
-
-    // 2. Daily Expense (Strictly for selected date)
-    const dailyExpense = filteredTransactions
+    const totalExpense = transactions
         .filter(t => t.type === 'expense')
-        .reduce((acc, t) => acc + t.amount, 0);
+        .reduce((acc, t) => acc + Number(t.amount), 0);
 
+    const balance = totalIncome - totalExpense;
 
-    // 2. Cumulative Balance (All transactions <= currentDate)
-    // We need to check 'transactions' (global state) not just filtered
-    const cumulativeBalance = transactions
-        .filter(t => t.dateStr <= currentDate)
-        .reduce((acc, t) => {
-            return t.type === 'income' ? acc + t.amount : acc - t.amount;
-        }, 0);
-
-    balanceEl.textContent = `$${cumulativeBalance.toFixed(2)}`;
-    incomeEl.textContent = `$${moneyReceived.toFixed(2)}`;
-
-    expenseEl.textContent = `$${dailyExpense.toFixed(2)}`;
+    balanceEl.textContent = `$${balance.toFixed(2)}`;
+    incomeEl.textContent = `$${totalIncome.toFixed(2)}`;
+    expenseEl.textContent = `$${totalExpense.toFixed(2)}`;
 }
 
 // --- Theme Toggle ---
-
 function toggleTheme() {
     const currentTheme = document.documentElement.getAttribute('data-theme');
     const newTheme = currentTheme === 'light' ? 'dark' : 'light';
-
     document.documentElement.setAttribute('data-theme', newTheme);
     localStorage.setItem('theme', newTheme);
     updateThemeIcons(newTheme);
@@ -455,14 +472,5 @@ themeToggleBtn.addEventListener('click', toggleTheme);
 authBtn.addEventListener('click', toggleAuth);
 cancelEditBtn.addEventListener('click', cancelEdit);
 
-dateInp.addEventListener('change', (e) => {
-    currentDate = e.target.value;
-    updateUI();
-});
-resetDayBtn.addEventListener('click', resetDay);
-
-window.removeTransaction = removeTransaction;
-window.startEdit = startEdit;
-
+window.init = init;
 init();
-

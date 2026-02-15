@@ -55,65 +55,120 @@
             </div>
         </header>
 
-        <!-- Date Controls -->
-        <section class="date-controls glass-card">
-            <input type="date" id="current-date">
-            <button id="reset-day-btn" title="Clear all transactions for this date">
-                <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none"
-                    stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                    <path d="M3 6h18"></path>
-                    <path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6"></path>
-                    <path d="M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2"></path>
-                </svg>
-            </button>
-        </section>
-
-        <section class="glass-card balance-card">
-            <p>Total Balance (Up to Date)</p>
-            <h2 id="balance">$0.00</h2>
-        </section>
-
-        <section class="summary-container">
-            <div class="glass-card summary-item income">
-                <p>Money Received</p>
-                <h3 id="total-income">$0.00</h3>
-            </div>
-            <div class="glass-card summary-item expense">
-                <p>Daily Expenses</p>
-                <h3 id="total-expense">$0.00</h3>
-            </div>
-        </section>
-
-        <section class="glass-card form-section">
-            <h3 class="section-title">Record Transaction</h3>
-            <form id="transaction-form">
-                <div class="form-group">
-                    <label for="title">Title</label>
-                    <input type="text" id="title" placeholder="Description..." required>
-                </div>
-                <div class="form-group">
-                    <label for="amount">Amount</label>
-                    <input type="text" id="amount" inputmode="decimal" placeholder="0.00 or 10+20" required>
-                </div>
-                <div class="form-group">
-                    <label>Category Type</label>
-                    <div class="radio-group">
-                        <label class="radio-label">
-                            <input type="radio" name="type" value="income">
-                            <span class="radio-btn income-btn">Income (+)</span>
-                        </label>
-                        <label class="radio-label">
-                            <input type="radio" name="type" value="expense" checked>
-                            <span class="radio-btn expense-btn">Expense (-)</span>
-                        </label>
+        <div class="dashboard-grid">
+            <!-- Stats Row -->
+            <section class="stats-card">
+                <!-- Total Balance -->
+                <div class="glass-card balance-card">
+                    <div class="card-header">
+                        <span class="card-label">Total Balance</span>
+                        <div class="card-icon">
+                            <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="7" width="20" height="14" rx="2" ry="2"></rect><path d="M16 21V5a2 2 0 0 0-2-2h-4a2 2 0 0 0-2 2v16"></path></svg>
+                        </div>
+                    </div>
+                    <h2 class="card-amount" id="balance">$0.00</h2>
+                    <div class="trend-indicator">
+                        <span>Updated just now</span>
                     </div>
                 </div>
-                <div class="form-actions">
-                    <button type="submit" id="submit-btn" class="btn-primary">Append Transaction</button>
-                    <button type="button" id="cancel-edit-btn" class="btn-secondary hidden">Cancel</button>
+
+                <!-- Income -->
+                <div class="glass-card income-card">
+                    <div class="card-header">
+                        <span class="card-label">Total Income</span>
+                        <div class="card-icon">
+                            <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="23 6 13.5 15.5 8.5 10.5 1 18"></polyline><polyline points="17 6 23 6 23 12"></polyline></svg>
+                        </div>
+                    </div>
+                    <h3 class="card-amount" id="total-income">$0.00</h3>
+                    <div class="trend-indicator trend-up">
+                        <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 15l-6-6-6 6"/></path></svg>
+                        <span>Money Received</span>
+                    </div>
                 </div>
-            </form>
-        </section>
+
+                <!-- Expense -->
+                <div class="glass-card expense-card">
+                    <div class="card-header">
+                        <span class="card-label">Total Expense</span>
+                        <div class="card-icon">
+                            <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="23 18 13.5 8.5 8.5 13.5 1 6"></polyline><polyline points="17 18 23 18 23 12"></polyline></svg>
+                        </div>
+                    </div>
+                    <h3 class="card-amount" id="total-expense">$0.00</h3>
+                    <div class="trend-indicator trend-down">
+                        <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 9l6 6 6-6"/></path></svg>
+                        <span>Daily Spending</span>
+                    </div>
+                </div>
+            </section>
+
+            <!-- Transaction Form Side -->
+            <section class="glass-card form-section">
+                <h3 class="section-title">
+                    <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 5v14M5 12h14"/></svg>
+                    New Transaction
+                </h3>
+                <form id="transaction-form">
+                    <div class="form-group">
+                        <label for="title">Title</label>
+                        <input type="text" id="title" placeholder="What is this for?" required autocomplete="off">
+                    </div>
+                    
+                    <div class="form-group">
+                        <label for="amount">Amount</label>
+                        <input type="text" id="amount" inputmode="decimal" placeholder="0.00" required>
+                    </div>
+
+                    <div class="form-group">
+                        <label for="category">Category</label>
+                        <select id="category" required>
+                            <option value="" disabled selected>Select Category</option>
+                            <option value="Food">Food & Dining</option>
+                            <option value="Transportation">Transportation</option>
+                            <option value="Shopping">Shopping</option>
+                            <option value="Housing">Housing</option>
+                            <option value="Utilities">Utilities</option>
+                            <option value="Entertainment">Entertainment</option>
+                            <option value="Healthcare">Healthcare</option>
+                            <option value="Personal">Personal Care</option>
+                            <option value="Education">Education</option>
+                            <option value="Debt">Debt Payments</option>
+                            <option value="Savings">Savings & Investments</option>
+                            <option value="Other">Other</option>
+                        </select>
+                    </div>
+
+                    <div class="form-group">
+                        <label for="date">Date</label>
+                        <input type="date" id="date" required>
+                    </div>
+
+                    <div class="form-group">
+                        <label for="notes">Notes (Optional)</label>
+                        <textarea id="notes" placeholder="Add details..."></textarea>
+                    </div>
+
+                    <div class="form-group">
+                        <label>Transaction Type</label>
+                        <div class="radio-group">
+                            <label class="radio-label">
+                                <input type="radio" name="type" value="income">
+                                <span class="radio-btn income-btn">Income</span>
+                            </label>
+                            <label class="radio-label">
+                                <input type="radio" name="type" value="expense" checked>
+                                <span class="radio-btn expense-btn">Expense</span>
+                            </label>
+                        </div>
+                    </div>
+
+                    <div class="form-actions">
+                        <button type="submit" id="submit-btn" class="btn-primary">Add Transaction</button>
+                        <button type="button" id="cancel-edit-btn" class="btn-secondary hidden">Cancel</button>
+                    </div>
+                </form>
+            </section>
 
         <section class="glass-card history-section">
             <h3 class="section-title">Timeline</h3>
